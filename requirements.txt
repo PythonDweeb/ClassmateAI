@@ -6,3 +6,5 @@ streamlit
 weaviate
 watchdog
 langchain_weaviate
+beautifulsoup4
+sentence-transformers

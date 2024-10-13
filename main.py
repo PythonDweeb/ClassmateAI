@@ -1,3 +1,4 @@
+# consider naming this SuperSeniorAI
 import os
 
 # from dotenv import load_dotenv
@@ -11,20 +12,22 @@ from langchain_cerebras import ChatCerebras
 from langchain.chains.question_answering import load_qa_chain
 from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 
+# CEREBRAS_API_KEY = os.environ["CEREBRAS_API_KEY"]
+
 # Function to upload vectors to Weaviate
 def upload_vectors(texts, embeddings, progress_bar, cilent):
     vector_store = WeaviateVectorStore(client=client, index_name="my_class", text_key="text", embedding=embeddings)
     for i in range(len(texts)):
         t = texts[i]
         vector_store.add_texts([t.page_content])
-        progress_bar.progress((i + 1) / len(texts), "Indexing PDF content... (this may take a bit) 🦙")
+        progress_bar.progress((i + 1) / len(texts), "Indexing Website content... (this may take a bit) 🦙")
 
     progress_bar.empty()
 
     return vector_store
 
 st.set_page_config(page_icon="🤖", layout="wide", page_title="Cerebras")
-st.subheader("PDF Q&A with Weaviate 📄", divider="orange", anchor=False)
+st.subheader("Navigate your School!", divider="orange", anchor=False)
 
 # Load secrets
 with st.sidebar:
@@ -41,12 +44,12 @@ if not CEREBRAS_API_KEY or not WEAVIATE_URL or not WEAVIATE_API_KEY:
     st.markdown("""
     ## Welcome to Cerebras x Weaviate Demo!
 
-    This PDF analysis tool receives a file and allows you to ask questions about the content of the PDF through vector storage with Weaviate and a custom LLM implementation with Cerebras.
+    This Website analysis tool receives a site and allows you to ask questions about the content of it through vector storage with Weaviate and a custom LLM implementation with Cerebras.
 
     To get started:
     1. :red[Enter your Cerebras and Weaviate API credentials in the sidebar.]
-    2. Upload a PDF file to analyze.
-    3. Was the PDF TLDR? Ask a question!
+    2. Enter a Website to Analyze.
+    3. Ask about it!
 
     """)
 
@@ -55,15 +58,12 @@ if not CEREBRAS_API_KEY or not WEAVIATE_URL or not WEAVIATE_API_KEY:
 # Initialize chat history and selected model
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-if "uploaded_pdf" not in st.session_state:
-    st.session_state.uploaded_pdf = None
-
+if "website" not in st.session_state:
+    st.session_state.website = ""
 if "docsearch" not in st.session_state:
     st.session_state.docsearch = None
-
-# Load the PDF data
-uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+# get the website
+website = st.text_input("School Website: ")
 
 st.divider()
 
@@ -73,20 +73,14 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
-if uploaded_file is None:
-    st.markdown("Please upload a PDF file.")
+if not website:
+    st.markdown("Please enter a website.")
 else:
-    temp_filepath = os.path.join("/tmp", uploaded_file.name)
-    with open(temp_filepath, "wb") as f:
-        f.write(uploaded_file.getvalue())
-
-    loader = PyPDFLoader(temp_filepath)
-    data = loader.load()
-
-    # Split the data into smaller documents
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000,
-                                                   chunk_overlap=0)
-    texts = text_splitter.split_documents(data)
+    urls = [website]
+    loader = WebBaseLoader(urls)
+    documents = loader.load()
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    docs = text_splitter.split_documents(documents)
 
     # Create embeddings
     with st.spinner(text="Loading embeddings..."):
@@ -99,11 +93,13 @@ else:
     )
 
     # If the uploaded file is different from the previous one, update the index
-    if uploaded_file.name != st.session_state.uploaded_pdf:
-        st.session_state.uploaded_pdf = uploaded_file.name
-        progress_bar = st.progress(0, text="Indexing PDF content... (this may take a bit)")
-        st.session_state.docsearch = upload_vectors(texts, embeddings, progress_bar, client)
+    if website != st.session_state.website:
+        st.session_state.website = website
+        progress_bar = st.progress(0, text="Indexing Website content... (this may take a bit)")
+        st.session_state.docsearch = upload_vectors(docs, embeddings, progress_bar, client)
         st.session_state.messages = []
+
+# might need the above, look at it
 
     # Get user input
     if prompt := st.chat_input("Enter your prompt here..."):
