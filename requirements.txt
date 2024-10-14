@@ -1,10 +1,12 @@
 python-dotenv
 langchain
 langchain-community
-langchain_cerebras
+langchain-cerebras
 streamlit
 weaviate
 watchdog
-langchain_weaviate
+langchain-weaviate
 beautifulsoup4
 sentence-transformers
+selenium
+webdriver-manager
