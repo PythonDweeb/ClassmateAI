@@ -67,8 +67,7 @@ ClassmateAI can:
 - **Streamlit:** For the interactive UI  
 - **Weaviate:** Vector-based search and storage  
 - **Cerebras LLM:** Provides fast and accurate responses to user queries  
-- **BeautifulSoup:** For web scraping  
-- **Selenium:** Handles dynamic website content  
+- **BeautifulSoup:** For web scraping   
 
 ---
 
