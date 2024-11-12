@@ -1,42 +1,46 @@
 import os
 import time
-import weaviate
-import streamlit as st
-from langchain_weaviate import WeaviateVectorStore
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_cerebras import ChatCerebras
-from langchain.chains.question_answering import load_qa_chain
-from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
 from bs4 import BeautifulSoup
-from langchain.schema import Document
+import streamlit as st
 from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
+from validators import url as validate_url
 
-# Configure Chrome to run in headless mode (no pop-up window)
-def get_headless_driver():
-    options = Options()
-    options.add_argument("--headless")  # Run in headless mode
-    options.add_argument("--disable-gpu")  # Disable GPU rendering
-    options.add_argument("--no-sandbox")  # Bypass OS security model (for some environments)
-    options.add_argument("--disable-dev-shm-usage")  # Avoid shared memory issues
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains.question_answering import load_qa_chain
+from langchain.schema import Document
+from langchain.prompts import PromptTemplate
 
-# Function to scrape all content from a single page
-def scrape_page(url):
-    driver = get_headless_driver()
-    driver.get(url)
-    time.sleep(3)  # Adjust sleep time for page load if needed
-    html_content = driver.page_source
-    driver.quit()
-    soup = BeautifulSoup(html_content, "html.parser")
-    texts = [element.get_text(strip=True) for element in soup.find_all(True)]
-    return texts
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_cerebras import ChatCerebras
 
-# Crawling function to find and process subpages (with max page limit)
-def crawl_website(base_url, max_pages):
+from langchain.vectorstores import Weaviate
+import weaviate
+
+# Initialize abbreviation dictionary
+abbreviation_dict = {
+    'SCHS': 'Silver Creek High School',
+    'PHHS': 'Piedmont Hills High School',
+    'EVHS': 'Evergreen Valley High School',
+    'IHS': 'Independence High School',
+    'ESUHSD': 'East Side Union High School District',
+    # Add more abbreviations as needed
+}
+
+def replace_abbreviations(text):
+    for abbr, full in abbreviation_dict.items():
+        text = text.replace(abbr, full)
+    return text
+
+def extract_text(soup):
+    # Only extract text from specific tags
+    content = ''
+    for tag in soup.find_all(['h1', 'h2', 'h3', 'p', 'li']):
+        content += tag.get_text(separator=' ', strip=True) + ' '
+    return content
+
+def crawl_website(base_url, max_pages, allowed_paths):
     visited = set()
     to_visit = [base_url]
     all_texts = []
@@ -47,49 +51,62 @@ def crawl_website(base_url, max_pages):
             continue
 
         try:
-            texts = scrape_page(current_url)
-            all_texts.extend(texts)
+            response = requests.get(current_url)
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # Extract visible text from the page
+            text = extract_text(soup)
+            all_texts.append(text)
             visited.add(current_url)
 
             # Find and enqueue links from the current page
-            soup = BeautifulSoup('\n'.join(texts), "html.parser")
             for link in soup.find_all("a", href=True):
                 full_url = urljoin(base_url, link["href"])
-                if urlparse(full_url).netloc == urlparse(base_url).netloc:  # Stay within the same domain
-                    to_visit.append(full_url)
+                parsed_base = urlparse(base_url)
+                parsed_full = urlparse(full_url)
+
+                # Check if the URL is within the same domain and allowed paths
+                if parsed_full.netloc == parsed_base.netloc and any(path in full_url for path in allowed_paths):
+                    if full_url not in visited and full_url not in to_visit:
+                        to_visit.append(full_url)
+
+            time.sleep(1)  # Crawl delay to respect server load
 
         except Exception as e:
             st.error(f"Error scraping {current_url}: {e}")
 
     return all_texts
 
-# Upload vectors to Weaviate
-def upload_vectors(texts, embeddings, progress_bar, client):
-    vector_store = WeaviateVectorStore(client=client, index_name="my_class", text_key="text", embedding=embeddings)
-    
-    # No need to access 'page_content' here since 'texts' are already strings.
-    for i, text in enumerate(texts):
-        vector_store.add_texts([text])  # Add text directly
+def reset_session_state(website):
+    st.session_state.messages = []
+    st.session_state.processed_links = set()
+    st.session_state.docsearch = None
+    st.session_state.embeddings = None
+    st.session_state.last_website = website
 
-        # Update progress bar
-        progress_bar.progress((i + 1) / len(texts), "Indexing Website content... (this may take a bit)")
+def upload_vectors(docs, embeddings, client, class_name):
+    # Initialize Weaviate vector store
+    vector_store = Weaviate(client=client, index_name=class_name, text_key="text", embedding=embeddings)
 
-    progress_bar.empty()
+    # Add documents to vector store
+    with st.spinner("Indexing website content..."):
+        vector_store.add_documents(docs)
+
     return vector_store
 
 # Streamlit UI setup
-st.set_page_config(page_icon="🤖", layout="wide", page_title="Cerebras")
-st.subheader("Navigate your School!", divider="orange", anchor=False)
+st.set_page_config(page_icon="🤖", layout="wide", page_title="Cerebras x Weaviate Demo")
+st.subheader("Navigate Your School!", anchor=False)
 
 # Sidebar settings and inputs
 with st.sidebar:
     st.title("Settings")
-    st.markdown("### :red[Enter your Cerebras API Key below]")
-    CEREBRAS_API_KEY = st.text_input("Cerebras API Key:", type="password")
-    st.markdown("### :red[Enter your Weaviate URL below]")
-    WEAVIATE_URL = st.text_input("Weaviate URL:", type="password")
-    st.markdown("### :red[Enter your Weaviate API Key below]")
-    WEAVIATE_API_KEY = st.text_input("Weaviate API Key:", type="password")
+    st.markdown("### Enter your Cerebras API Key below")
+    CEREBRAS_API_KEY = st.text_input("Cerebras API Key:", type="password",value="csk-xnrcwxxnk9wt2vwj3d448m8jwfc2wpyd8c98mfknx38ryw3c")
+    st.markdown("### Enter your Weaviate URL below")
+    WEAVIATE_URL = st.text_input("Weaviate URL:", type="password",value="https://skcebcqytu25npjx6ghnma.c0.us-west3.gcp.weaviate.cloud")
+    st.markdown("### Enter your Weaviate API Key below")
+    WEAVIATE_API_KEY = st.text_input("Weaviate API Key:", type="password",value="PLU2ZntUMfqNBI2zw2cQmUafjJvaOODPOS2d")
     st.markdown("[Get your Cerebras API Key Here](https://inference.cerebras.ai/)")
 
     # Max pages slider for crawling
@@ -97,14 +114,14 @@ with st.sidebar:
 
 if not CEREBRAS_API_KEY or not WEAVIATE_URL or not WEAVIATE_API_KEY:
     st.markdown("""
-    ## Welcome to Cerebras x Weaviate Demo!
+    ## Welcome to the Cerebras x Weaviate Demo!
 
-    This Website analysis tool receives a site and allows you to ask questions about the content of it through vector storage with Weaviate and a custom LLM implementation with Cerebras.
+    This website analysis tool allows you to input a school website and then ask questions about its content through vector storage with Weaviate and a custom LLM implementation with Cerebras.
 
     To get started:
-    1. :red[Enter your Cerebras and Weaviate API credentials in the sidebar.]
-    2. Enter a Website to Analyze.
-    3. Ask about it!
+    1. **Enter your Cerebras and Weaviate API credentials in the sidebar.**
+    2. **Enter a website to analyze.**
+    3. **Ask about it!**
 
     """)
     st.stop()
@@ -112,15 +129,17 @@ if not CEREBRAS_API_KEY or not WEAVIATE_URL or not WEAVIATE_API_KEY:
 # Initialize session state variables
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "website" not in st.session_state:
-    st.session_state.website = ""
-if "docsearch" not in st.session_state:
-    st.session_state.docsearch = None
 if "processed_links" not in st.session_state:
     st.session_state.processed_links = set()
+if "docsearch" not in st.session_state:
+    st.session_state.docsearch = None
+if "embeddings" not in st.session_state:
+    st.session_state.embeddings = None
+if "last_website" not in st.session_state:
+    st.session_state.last_website = ''
 
 # Get the website input
-website = st.text_input("School Website: ")
+website = st.text_input("School Website:", placeholder="e.g., https://www.silvercreekhigh.org")
 
 st.divider()
 
@@ -132,37 +151,116 @@ for message in st.session_state.messages:
 
 if not website:
     st.markdown("Please enter a website.")
+elif not validate_url(website):
+    st.error("Please enter a valid URL.")
 else:
+    # Reset session state if a new website is entered
+    if website != st.session_state.last_website:
+        reset_session_state(website)
+
     if website in st.session_state.processed_links:
         st.markdown(f"The website **{website}** has already been processed. You can ask questions about it.")
     else:
-        texts = crawl_website(website, max_pages)
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        docs = text_splitter.split_documents([Document(page_content=t) for t in texts])
+        # Crawl the website and collect content
+        allowed_paths = ['/about/', '/events/', '/news/', '/calendar/', '/home/', '/academics/', '/students/', '/parents/']
 
+        with st.spinner(f"Crawling {website}..."):
+            texts = crawl_website(website, max_pages, allowed_paths)
+
+        # Replace abbreviations in texts
+        texts = [replace_abbreviations(text) for text in texts]
+
+        # Split the texts into manageable chunks
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        docs = text_splitter.split_documents([Document(page_content=text) for text in texts])
+
+        # Load embeddings
         with st.spinner("Loading embeddings..."):
-            embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            st.session_state.embeddings = embeddings  # Store embeddings in session state
 
-        client = weaviate.connect_to_weaviate_cloud(
-            cluster_url=WEAVIATE_URL,
-            auth_credentials=weaviate.AuthApiKey(WEAVIATE_API_KEY),
+        # Connect to Weaviate
+        client = weaviate.Client(
+            url=WEAVIATE_URL,
+            auth_client_secret=weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY),
+            additional_headers={"X-OpenAI-Api-Key": WEAVIATE_API_KEY},
         )
 
-        progress_bar = st.progress(0, "Indexing Website content...")
-        st.session_state.docsearch = upload_vectors([doc.page_content for doc in docs], embeddings, progress_bar, client)
+        # Define Weaviate schema
+        class_name = "SchoolContent"
+        schema = {
+            "classes": [
+                {
+                    "class": class_name,
+                    "vectorizer": "none",  # We'll provide our own embeddings
+                    "properties": [
+                        {
+                            "name": "text",
+                            "dataType": ["text"],
+                        },
+                    ],
+                }
+            ]
+        }
+
+        # Create schema if it doesn't exist
+        if not client.schema.contains(schema):
+            client.schema.create(schema)
+
+        # Upload vectors to Weaviate
+        st.session_state.docsearch = upload_vectors(docs, embeddings, client, class_name)
         st.session_state.processed_links.add(website)
         st.session_state.messages = []
 
-    if prompt := st.chat_input("Enter your prompt here..."):
+    # Ensure embeddings are available
+    if "embeddings" not in st.session_state or st.session_state.embeddings is None:
+        with st.spinner("Loading embeddings..."):
+            embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            st.session_state.embeddings = embeddings
+    else:
+        embeddings = st.session_state.embeddings
+
+    if prompt := st.chat_input("Enter your question here..."):
+        # Replace abbreviations in the prompt
+        prompt = replace_abbreviations(prompt)
+
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar='❔'):
             st.markdown(prompt)
 
+        # Initialize the language model
         llm = ChatCerebras(api_key=CEREBRAS_API_KEY, model="llama3.1-8b")
-        chain = load_qa_chain(llm, chain_type="stuff")
-        docs = st.session_state.docsearch.similarity_search(prompt)
 
+        # Create a custom prompt template
+        prompt_template = PromptTemplate(
+            input_variables=["context", "question"],
+            template="""
+            You are an expert assistant specializing in providing detailed information about schools.
+            Based on the context provided, thoroughly answer the following question.
+
+            Context:
+            {context}
+
+            Question:
+            {question}
+
+            Detailed Answer:
+            """
+        )
+
+        # Load the QA chain with the custom prompt
+        chain = load_qa_chain(llm, chain_type="stuff", prompt=prompt_template)
+
+        # Compute the embedding of the query
+        query_embedding = embeddings.embed_query(prompt)
+
+        # Perform similarity search using nearVector
+        docs = st.session_state.docsearch.similarity_search_by_vector(query_embedding, k=4)
+
+        # Generate the response
         response = chain.run(input_documents=docs, question=prompt)
+
+        # Display the response
         with st.chat_message("assistant", avatar="🤖"):
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.markdown(response)
