@@ -6,7 +6,7 @@ Welcome to **ClassmateAI** — your friendly digital assistant for navigating sc
 
 ## 💡 What is ClassmateAI?
 
-**ClassmateAI** is an intelligent assistant designed to help students with everything related to schoo, from understanding your new school’s website to answering questions about its content.
+**ClassmateAI** is an intelligent assistant designed to help students with everything related to school, from understanding your new school’s website to answering questions about its content.
 
 ClassmateAI can:
 - 🗂 **Explore and understand your school’s resources** easily.
