@@ -30,10 +30,10 @@ ClassmateAI can:
 ## 🛠️ Tech Stack
 
 - **Frontend:** Streamlit  
-- **Backend:** Python, Selenium, BeautifulSoup  
+- **Backend:** Python
 - **Vector Search:** Weaviate  
-- **Embeddings:** SentenceTransformer & Cerebras Models  
-- **Web Scraping:** Chrome WebDriver in headless mode  
+- **Embeddings:** HuggingFace & Cerebras Models  
+- **Web Scraping:** BeatufiulSoup, requests
 
 ---
 
