@@ -19,8 +19,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.vectorstores import Weaviate
 import weaviate
 
-print(18.082029982110012)
-
 abbreviation_dict = {
     'SCHS': 'Silver Creek High School',
     'PHHS': 'Piedmont Hills High School',
