@@ -11,3 +11,4 @@ sentence-transformers
 selenium
 webdriver-manager
 bs4
+langchain-google-genai
