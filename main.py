@@ -96,7 +96,7 @@ with st.sidebar:
     WEAVIATE_API_KEY = st.text_input("Weaviate API Key:", type="password", value="J7EJLql6tF6pQ17Yo7LnVqRZedxc0I0oi7CD")
     st.markdown("[Get your Cerebras API Key Here](https://inference.cerebras.ai/)")
     max_pages = st.slider("Max Pages to Crawl", min_value=1, max_value=100, value=10)
-    GEMINI_API_KEY="AIzaSyBawkYk665TtIgt8UhldtjJU19fpO4EIuk"
+    GEMINI_API_KEY=""
 if not CEREBRAS_API_KEY or not WEAVIATE_URL or not WEAVIATE_API_KEY:
     st.markdown("""
     ## Welcome to the Cerebras x Weaviate Demo!
