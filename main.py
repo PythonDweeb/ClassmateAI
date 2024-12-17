@@ -19,6 +19,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.vectorstores import Weaviate
 import weaviate
 
+#test
+
 abbreviation_dict = {
     'SCHS': 'Silver Creek High School',
     'PHHS': 'Piedmont Hills High School',
@@ -216,4 +218,4 @@ else:
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.markdown(response)
 
-        print(y-x)
+        # print(y-x)
